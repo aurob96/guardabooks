@@ -2421,9 +2421,6 @@ export function App() {
           ) : (
             <span className="session-chip">{session.library.name} · {session.library.role}</span>
           )}
-          <button className="add-book-button" onClick={startNewBookFlow} title="Agregar libro">
-            <Plus size={18} /> Agregar
-          </button>
           {installPrompt && (
             <button className="install-button" onClick={installApp}>
               <Download size={18} /> Instalar
@@ -2443,6 +2440,9 @@ export function App() {
           </button>
         </div>
       </header>
+      <button className="floating-add-button" onClick={startNewBookFlow} title="Agregar libro" aria-label="Agregar libro">
+        <Plus size={28} />
+      </button>
 
       <main className="layout">
         <section className="catalog-panel">

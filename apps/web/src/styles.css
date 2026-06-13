@@ -237,18 +237,32 @@ textarea:focus {
   white-space: nowrap;
 }
 
-.add-book-button {
+.install-button {
   background: #0f766e;
   color: #fffdf7;
   font-weight: 800;
   white-space: nowrap;
 }
 
-.install-button {
+.floating-add-button {
   background: #0f766e;
+  border: 2px solid #fffdf7;
+  border-radius: 999px;
+  bottom: max(1.1rem, env(safe-area-inset-bottom));
+  box-shadow: 0 14px 34px rgba(15, 118, 110, 0.35);
   color: #fffdf7;
-  font-weight: 800;
-  white-space: nowrap;
+  height: 64px;
+  padding: 0;
+  position: fixed;
+  right: max(1.1rem, env(safe-area-inset-right));
+  width: 64px;
+  z-index: 28;
+}
+
+.floating-add-button:hover,
+.floating-add-button:focus-visible {
+  background: #0b5f59;
+  box-shadow: 0 16px 38px rgba(15, 118, 110, 0.44);
 }
 
 .global-menu-actions {
@@ -2344,7 +2358,6 @@ textarea:focus {
   }
 
   .tools-button,
-  .add-book-button,
   .install-button {
     min-width: 42px;
     padding: 0;
@@ -2352,15 +2365,18 @@ textarea:focus {
   }
 
   .tools-button svg,
-  .add-book-button svg,
   .install-button svg {
     margin: 0;
   }
 
   .tools-button,
-  .add-book-button,
   .install-button {
     font-size: 0;
+  }
+
+  .floating-add-button {
+    height: 58px;
+    width: 58px;
   }
 
   .layout {
