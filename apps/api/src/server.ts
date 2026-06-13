@@ -720,18 +720,16 @@ async function lookupGoogleBooks(isbn: string) {
 }
 
 async function searchOpenLibraryByText(query: string, author?: string) {
-  const params = new URLSearchParams({
-    title: query,
-    limit: "8"
-  });
-  if (author) params.set("author", author);
-
-  const payload = await fetchJson(`https://openlibrary.org/search.json?${params.toString()}`);
-  const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+  const searches = [
+    new URLSearchParams({ title: query, limit: "12", ...(author ? { author } : {}) }),
+    new URLSearchParams({ q: [query, author].filter(Boolean).join(" "), limit: "12" }),
+    new URLSearchParams({ q: query, limit: "12" })
+  ];
+  const payloads = await Promise.all(searches.map((params) => fetchJson(`https://openlibrary.org/search.json?${params.toString()}`)));
+  const docs = payloads.flatMap((payload) => (Array.isArray(payload?.docs) ? payload.docs : []));
 
   return docs
     .filter((doc: any) => doc?.title)
-    .slice(0, 8)
     .map((doc: any) => ({
       source: "open_library",
       isbn10: firstText(doc.isbn?.filter((isbn: string) => isbn.length === 10)),
@@ -751,9 +749,15 @@ async function searchOpenLibraryByText(query: string, author?: string) {
 }
 
 async function searchGoogleBooksByText(query: string, author?: string, publisher?: string) {
-  const search = [`intitle:${query}`, author ? `inauthor:${author}` : "", publisher ? `inpublisher:${publisher}` : ""].filter(Boolean).join("+");
-  const payload = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(search)}&maxResults=8`);
-  const items = Array.isArray(payload?.items) ? payload.items : [];
+  const searches = [
+    [`intitle:${query}`, author ? `inauthor:${author}` : "", publisher ? `inpublisher:${publisher}` : ""].filter(Boolean).join(" "),
+    [query, author, publisher].filter(Boolean).join(" "),
+    query
+  ].filter((value, index, values) => value && values.indexOf(value) === index);
+  const payloads = await Promise.all(
+    searches.map((search) => fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(search)}&maxResults=12&printType=books`))
+  );
+  const items = payloads.flatMap((payload) => (Array.isArray(payload?.items) ? payload.items : []));
 
   return items
     .map((item: any) => item.volumeInfo)
@@ -776,8 +780,16 @@ async function searchGoogleBooksByText(query: string, author?: string, publisher
     }));
 }
 
-function scoreExternalBookMatch(book: any, filters: { publisher?: string; year?: number | null }) {
+function scoreExternalBookMatch(book: any, filters: { title?: string; author?: string; publisher?: string; year?: number | null }) {
   let score = 0;
+  if (filters.title) {
+    score += similarity(filters.title, book.title ?? "") * 8;
+    if (normalizeForMatch(book.title ?? "").includes(normalizeForMatch(filters.title))) score += 2;
+  }
+  if (filters.author && book.authors?.length) {
+    const authorScore = Math.max(...book.authors.map((author: string) => similarity(filters.author ?? "", author)));
+    score += authorScore * 4;
+  }
   if (filters.publisher && book.publisher && normalizeName(book.publisher).includes(normalizeName(filters.publisher))) {
     score += 2;
   }
@@ -787,6 +799,9 @@ function scoreExternalBookMatch(book: any, filters: { publisher?: string; year?:
     else if (distance <= 1) score += 2;
     else if (distance <= 3) score += 1;
   }
+  if (book.isbn10 || book.isbn13) score += 0.75;
+  if (book.coverUrl) score += 0.5;
+  if (book.synopsis) score += 0.35;
   return score;
 }
 
@@ -1646,14 +1661,14 @@ app.get("/api/external-books/search", async (req, res, next) => {
 
     const seen = new Set<string>();
     const results = [...openLibraryResults, ...googleBooksResults]
+      .sort((left, right) => scoreExternalBookMatch(right, { title, author, publisher, year }) - scoreExternalBookMatch(left, { title, author, publisher, year }))
       .filter((book) => {
-        const key = normalizeName(`${book.title} ${book.authors?.[0] ?? ""} ${book.publicationYear ?? ""}`);
+        const key = normalizeForMatch(`${book.title} ${book.authors?.[0] ?? ""} ${book.publicationYear ?? ""}`);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       })
-      .sort((left, right) => scoreExternalBookMatch(right, { publisher, year }) - scoreExternalBookMatch(left, { publisher, year }))
-      .slice(0, 10);
+      .slice(0, 12);
 
     const enriched = await Promise.all(results.map((book) => enrichWithDeweyGenreSuggestion(book, currentLibraryId(req))));
     res.json({ items: enriched });
