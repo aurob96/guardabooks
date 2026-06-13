@@ -206,6 +206,7 @@ export function App() {
   const [includeShelfOnLabel, setIncludeShelfOnLabel] = useState(true);
   const [labelSerialDraft, setLabelSerialDraft] = useState("");
   const [selectedMapShelfId, setSelectedMapShelfId] = useState("");
+  const [selectedShelfBook, setSelectedShelfBook] = useState<Book | null>(null);
   const [highlightedShelfId, setHighlightedShelfId] = useState("");
   const [highlightedBookId, setHighlightedBookId] = useState("");
   const [activeSpineBookId, setActiveSpineBookId] = useState("");
@@ -447,8 +448,43 @@ export function App() {
     return value.replace(/[^0-9X]/gi, "").toUpperCase();
   }
 
+  function normalizeCatalogName(value?: string | null) {
+    return (value ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function resolveGenreSelection(payload: {
+    genreId?: string | null;
+    subgenreId?: string | null;
+    suggestedGenre?: string | null;
+    suggestedSubgenre?: string | null;
+  }) {
+    const explicitGenre = payload.genreId ? genres.find((genre) => genre.id === payload.genreId) : null;
+    const genreName = normalizeCatalogName(payload.suggestedGenre);
+    const genre = explicitGenre ?? genres.find((item) => normalizeCatalogName(item.name) === genreName) ?? null;
+    const subgenreName = normalizeCatalogName(payload.suggestedSubgenre);
+    const subgenre = payload.subgenreId
+      ? genre?.subgenres.find((item) => item.id === payload.subgenreId) ?? null
+      : genre?.subgenres.find((item) => normalizeCatalogName(item.name) === subgenreName) ?? null;
+
+    return {
+      genreId: genre?.id ?? payload.genreId ?? "",
+      subgenreId: subgenre?.id ?? payload.subgenreId ?? ""
+    };
+  }
+
   function applyExternalBook(metadata: ExternalBookMetadata) {
     const suggestion = metadata.genreSuggestion ?? null;
+    const selection = resolveGenreSelection({
+      genreId: suggestion?.genreId,
+      subgenreId: suggestion?.subgenreId,
+      suggestedGenre: suggestion?.genero_principal,
+      suggestedSubgenre: suggestion?.subgenero
+    });
     const deweyHierarchy = [metadata.genre, ...(metadata.subjects ?? [])].filter((value): value is string => Boolean(value)).slice(0, 5);
     const deweyExplanation = suggestion?.razon || (metadata.deweyCode ? "Codigo Dewey importado desde metadatos publicos." : "");
     setDeweyGenreSuggestion(suggestion);
@@ -463,8 +499,8 @@ export function App() {
       publicationYear: metadata.publicationYear ?? current.publicationYear,
       pageCount: metadata.pageCount ?? current.pageCount,
       genre: metadata.genre ?? current.genre,
-      genreId: suggestion?.confianza === "alta" && suggestion.genreId ? suggestion.genreId : current.genreId,
-      subgenreId: suggestion?.confianza === "alta" && suggestion.subgenreId ? suggestion.subgenreId : current.subgenreId,
+      genreId: suggestion?.confianza === "alta" && selection.genreId ? selection.genreId : current.genreId,
+      subgenreId: suggestion?.confianza === "alta" && selection.subgenreId ? selection.subgenreId : current.subgenreId,
       deweyGenreRaw: [metadata.deweyCode, ...(metadata.subjects ?? [])].filter(Boolean).join(" | ") || metadata.genre || current.deweyGenreRaw,
       deweyCode: metadata.deweyCode ?? current.deweyCode,
       deweyHierarchy: metadata.deweyCode ? deweyHierarchy : current.deweyHierarchy,
@@ -482,18 +518,24 @@ export function App() {
       suggestedSubgenre: suggestion?.subgenero ?? current.suggestedSubgenre,
       genreConfidence: suggestion?.confianza ?? current.genreConfidence,
       genreReason: suggestion?.razon ?? current.genreReason,
-      genreId: suggestion?.genreId ?? current.genreId,
-      subgenreId: suggestion?.subgenreId ?? current.subgenreId
+      genreId: selection.genreId || current.genreId,
+      subgenreId: selection.subgenreId || current.subgenreId
     }));
   }
 
   function applyDeweyGenreSuggestion() {
     if (!deweyGenreSuggestion) return;
+    const selection = resolveGenreSelection({
+      genreId: deweyGenreSuggestion.genreId,
+      subgenreId: deweyGenreSuggestion.subgenreId,
+      suggestedGenre: deweyGenreSuggestion.genero_principal,
+      suggestedSubgenre: deweyGenreSuggestion.subgenero
+    });
     setBookForm((current) => ({
       ...current,
       genre: deweyGenreSuggestion.genero_principal,
-      genreId: deweyGenreSuggestion.genreId ?? current.genreId,
-      subgenreId: deweyGenreSuggestion.subgenreId ?? "",
+      genreId: selection.genreId || current.genreId,
+      subgenreId: selection.subgenreId,
       deweyGenreRaw: current.deweyGenreRaw || deweyGenreSuggestion.razon
     }));
     setMessage("Genero sugerido aplicado. Puedes ajustarlo antes de guardar.");
@@ -554,6 +596,7 @@ export function App() {
   }
 
   function applyClassificationToForm(payload: ClassificationPayload) {
+    const selection = resolveGenreSelection(payload);
     setBookForm((current) => ({
       ...current,
       deweyCode: payload.deweyCode ?? "",
@@ -564,9 +607,10 @@ export function App() {
       lcExplanation: payload.lcExplanation ?? "",
       customTags: payload.customTags,
       genre: payload.suggestedGenre ?? current.genre,
-      genreId: payload.genreId ?? current.genreId,
-      subgenreId: payload.subgenreId ?? current.subgenreId
+      genreId: selection.genreId || current.genreId,
+      subgenreId: selection.subgenreId || current.subgenreId
     }));
+    setMessage("Sugerencia aplicada al formulario. Revisa y guarda el libro.");
   }
 
   async function suggestClassification() {
@@ -884,6 +928,7 @@ export function App() {
       setDrawerMode("menu");
       setBookFlowStep(1);
       setBookEntryMethod("");
+      setOpenToolSections(["scan", "book"]);
       setMessage(editingBookId ? "Libro actualizado" : "Libro agregado al catalogo");
       await loadData();
     } catch (submitError) {
@@ -1307,6 +1352,7 @@ export function App() {
       return;
     }
     setSelectedMapShelfId(book.shelf.id);
+    setSelectedShelfBook(book);
     setHighlightedShelfId(book.shelf.id);
     setHighlightedBookId(book.id);
     setActiveView("map");
@@ -1314,6 +1360,13 @@ export function App() {
       setHighlightedShelfId("");
       setHighlightedBookId("");
     }, 2600);
+  }
+
+  function openLoanPanel(book: Book) {
+    setLoanForm((current) => ({ ...current, bookId: book.id }));
+    setActiveView("catalog");
+    setIsToolsOpen(true);
+    setDrawerMode("loan");
   }
 
   function visibleShelfGenres() {
@@ -1331,12 +1384,8 @@ export function App() {
   }
 
   function openBookFromSpine(book: Book) {
-    if (window.matchMedia("(max-width: 640px)").matches && activeSpineBookId !== book.id) {
-      setActiveSpineBookId(book.id);
-      return;
-    }
-    setActiveSpineBookId("");
-    startEditBook(book);
+    setActiveSpineBookId(book.id);
+    setSelectedShelfBook(book);
   }
 
   async function reorderSectionBook(shelf: Shelf, sectionId: string, targetBookId: string) {
@@ -1761,7 +1810,11 @@ export function App() {
       <article
         id={`shelf-card-${shelf.id}`}
         className={`bookshelf-card ${detail ? "detail" : ""} ${highlightedShelfId === shelf.id || shelfHasSearchMatch(shelf) ? "highlighted" : ""}`}
-        onClick={() => !detail && setSelectedMapShelfId(shelf.id)}
+        onClick={() => {
+          if (detail) return;
+          setSelectedShelfBook(null);
+          setSelectedMapShelfId(shelf.id);
+        }}
       >
         <div className="bookshelf-card-header">
           <div>
@@ -1811,6 +1864,47 @@ export function App() {
         </div>
         <CapacityMeter count={shelfBooks.length} capacity={occupancy.capacity} />
       </article>
+    );
+  }
+
+  function ShelfBookDetail({ book }: { book: Book }) {
+    return (
+      <section className="shelf-book-detail" aria-label={`Detalle de ${book.title}`}>
+        <button type="button" className="icon-menu shelf-book-close" onClick={() => setSelectedShelfBook(null)} title="Cerrar">
+          <X size={18} />
+        </button>
+        <div className="cover detail-cover">
+          {book.coverUrl ? <img src={book.coverUrl} alt={`Portada de ${book.title}`} /> : <BookOpen size={34} />}
+        </div>
+        <div className="shelf-book-detail-content">
+          <span className="eyebrow dark">{book.shelf?.name ?? "Sin estanteria"}{book.shelfSection ? ` · ${book.shelfSection.name}` : ""}</span>
+          <h2>{book.title}</h2>
+          <p>{authorsLine(book) || "Autor sin registrar"}</p>
+          <div className="chips">
+            <span>{book.genreRef?.name ?? book.genre ?? "Sin genero"}</span>
+            {book.subgenre && <span>{book.subgenre.name}</span>}
+            <span>{readingLabel(book)}</span>
+            {book.labelSerial && <span className="label-chip">{book.labelSerial}</span>}
+          </div>
+          <div className="meta-line">
+            {[book.publicationYear, book.publisher?.name, book.isbn13 ? `ISBN ${book.isbn13}` : ""].filter(Boolean).map((item) => (
+              <span key={String(item)}>{item}</span>
+            ))}
+          </div>
+          {book.synopsis && <p className="shelf-book-synopsis">{book.synopsis}</p>}
+          <div className="card-actions">
+            <button type="button" onClick={() => { setSelectedShelfBook(null); startEditBook(book); }}>
+              <Pencil size={15} /> Editar
+            </button>
+            <button type="button" onClick={() => { setSelectedShelfBook(null); openLabelPanel(book); }}>
+              <Printer size={15} /> Tejuelo
+            </button>
+            <button type="button" onClick={() => { setSelectedShelfBook(null); openLoanPanel(book); }}>
+              <Send size={15} /> Prestar
+            </button>
+          </div>
+        </div>
+      </section>
     );
   }
 
@@ -2071,6 +2165,21 @@ export function App() {
                 <h2>Clasificacion por IA</h2>
                 <div className="stack-form">
                   <button type="button" className="primary" onClick={suggestClassification} disabled={isClassifying}><Sparkles size={17} /> {isClassifying ? "Consultando..." : "Sugerir con IA"}</button>
+                  {classificationDraft.suggestedGenre && (
+                    <div className="ai-genre-suggestion media">
+                      <div>
+                        <span className="suggestion-badge">{classificationDraft.genreConfidence ?? "IA"}</span>
+                        <strong>
+                          {classificationDraft.suggestedGenre}
+                          {classificationDraft.suggestedSubgenre ? ` / ${classificationDraft.suggestedSubgenre}` : ""}
+                        </strong>
+                      </div>
+                      {classificationDraft.genreReason && <p>{classificationDraft.genreReason}</p>}
+                      <button type="button" className="ghost" onClick={() => applyClassificationToForm(classificationDraft)}>
+                        <Check size={15} /> Guardar sugerencia
+                      </button>
+                    </div>
+                  )}
                   <div className="two-cols">
                     <input placeholder="Codigo Dewey" value={classificationDraft.deweyCode ?? ""} onChange={(event) => setClassificationDraft({ ...classificationDraft, deweyCode: event.target.value })} />
                     <input placeholder="Signatura LC" value={classificationDraft.lcCode ?? ""} onChange={(event) => setClassificationDraft({ ...classificationDraft, lcCode: event.target.value })} />
@@ -2159,10 +2268,13 @@ export function App() {
                 {selectedMapShelf && <p>{selectedMapShelf.homeLocation} · {shelfGenresLine(selectedMapShelf)}</p>}
               </div>
               <div className="bookshelf-toolbar-actions">
-                <button className={!selectedMapShelf ? "active" : ""} onClick={() => setSelectedMapShelfId("")}>Vista general</button>
+                <button className={!selectedMapShelf ? "active" : ""} onClick={() => { setSelectedShelfBook(null); setSelectedMapShelfId(""); }}>Vista general</button>
                 <button
                   className={selectedMapShelf ? "active" : ""}
-                  onClick={() => setSelectedMapShelfId(selectedMapShelfId || shelves[0]?.id || "")}
+                  onClick={() => {
+                    setSelectedShelfBook(null);
+                    setSelectedMapShelfId(selectedMapShelfId || shelves[0]?.id || "");
+                  }}
                   disabled={shelves.length === 0}
                 >
                   Detalle estanteria
@@ -2179,7 +2291,10 @@ export function App() {
               />
             </label>
             {selectedMapShelf ? (
-              <ShelfFurniture shelf={selectedMapShelf} detail />
+              <>
+                <ShelfFurniture shelf={selectedMapShelf} detail />
+                {selectedShelfBook && selectedShelfBook.shelf?.id === selectedMapShelf.id && <ShelfBookDetail book={selectedShelfBook} />}
+              </>
             ) : (
               <div className="bookshelf-grid">
                 {shelves.map((shelf) => <ShelfFurniture key={shelf.id} shelf={shelf} />)}
@@ -2922,6 +3037,9 @@ export function App() {
                     </strong>
                   </div>
                   {classificationDraft.genreReason && <p>{classificationDraft.genreReason}</p>}
+                  <button type="button" className="ghost" onClick={() => applyClassificationToForm(classificationDraft)}>
+                    <Check size={15} /> Guardar sugerencia
+                  </button>
                 </div>
               )}
               {deweyGenreSuggestion && (
