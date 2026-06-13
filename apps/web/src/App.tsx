@@ -42,6 +42,7 @@ import type {
   DeweyGenreSuggestion,
   ExternalBookMetadata,
   Genre,
+  LibraryAccess,
   LibraryMember,
   LibraryRole,
   ReadingStatus,
@@ -135,6 +136,7 @@ export function App() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", libraryName: "" });
   const [members, setMembers] = useState<LibraryMember[]>([]);
+  const [libraries, setLibraries] = useState<LibraryAccess[]>([]);
   const [memberForm, setMemberForm] = useState<{ email: string; role: LibraryRole }>({ email: "", role: "READER" });
   const [bookFlowStep, setBookFlowStep] = useState(1);
   const [bookEntryMethod, setBookEntryMethod] = useState<"scan" | "isbn" | "search" | "manual" | "">("");
@@ -263,17 +265,19 @@ export function App() {
       if (shelfFilter) params.set("shelfId", shelfFilter);
       params.set("sort", sortOrder);
 
-      const [bookResult, shelfResult, genreResult, memberResult] = await Promise.all([
+      const [bookResult, shelfResult, genreResult, memberResult, libraryResult] = await Promise.all([
         api.listBooks(params),
         api.listShelves(),
         api.listGenres(),
-        session?.library.role === "OWNER" ? api.listMembers() : Promise.resolve({ items: [] })
+        session?.library.role === "OWNER" ? api.listMembers() : Promise.resolve({ items: [] }),
+        api.listLibraries()
       ]);
       setBooks(bookResult.items);
       setTotal(bookResult.total);
       setShelves(shelfResult.items);
       setGenres(genreResult.items);
       setMembers(memberResult.items);
+      setLibraries(libraryResult.items);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudo cargar la biblioteca");
     } finally {
@@ -364,12 +368,32 @@ export function App() {
   function logout() {
     setAuthToken("");
     setSession(null);
+    setLibraries([]);
     setBooks([]);
     setShelves([]);
     setGenres([]);
     setTotal(0);
     setMessage("");
     setError("");
+  }
+
+  async function switchLibrary(libraryId: string) {
+    if (!libraryId || libraryId === session?.library.id) return;
+    setError("");
+    setMessage("");
+    try {
+      const nextSession = await api.switchLibrary(libraryId);
+      setAuthToken(nextSession.token);
+      setSession(nextSession);
+      setSelectedBookIds([]);
+      setShelfFilter("");
+      setGenreFilter("");
+      setSubgenreFilter("");
+      setActiveView("catalog");
+      setMessage(`Biblioteca activa: ${nextSession.library.name}`);
+    } catch (switchError) {
+      setError(switchError instanceof Error ? switchError.message : "No se pudo cambiar de biblioteca");
+    }
   }
 
   useEffect(() => {
@@ -2287,7 +2311,19 @@ export function App() {
           </div>
         </button>
         <div className="topbar-actions">
-          <span className="session-chip">{session.library.name} · {session.library.role}</span>
+          {libraries.length > 1 ? (
+            <label className="library-switcher">
+              <select value={session.library.id} onChange={(event) => switchLibrary(event.target.value)}>
+                {libraries.map((library) => (
+                  <option key={library.id} value={library.id}>
+                    {library.name} · {library.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="session-chip">{session.library.name} · {session.library.role}</span>
+          )}
           {installPrompt && (
             <button className="install-button" onClick={installApp}>
               <Download size={18} /> Instalar

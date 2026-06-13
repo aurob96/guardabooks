@@ -205,6 +205,25 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.library-switcher {
+  display: block;
+  max-width: 240px;
+}
+
+.library-switcher select {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fffdf7;
+  font-size: 0.86rem;
+  font-weight: 700;
+  min-height: 40px;
+  padding: 0.45rem 0.6rem;
+}
+
+.library-switcher option {
+  color: #201728;
+}
+
 .icon-button {
   background: rgba(255, 255, 255, 0.12);
   color: #fffdf7;
@@ -2282,7 +2301,8 @@ textarea:focus {
     width: 64px;
   }
 
-  .session-chip {
+  .session-chip,
+  .library-switcher {
     display: none;
   }
 

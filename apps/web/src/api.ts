@@ -1,4 +1,4 @@
-import type { AuthSession, BookPayload, ClassificationPayload, DuplicateMatch, ExternalBookMetadata, LibraryMember, LibraryRole, ReorganizationReport } from "./types";
+import type { AuthSession, BookPayload, ClassificationPayload, DuplicateMatch, ExternalBookMetadata, LibraryAccess, LibraryMember, LibraryRole, ReorganizationReport } from "./types";
 
 const API_URL = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 const TOKEN_KEY = "biblioteca.auth.token";
@@ -58,6 +58,12 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   me: () => request<Omit<AuthSession, "token">>("/me"),
+  listLibraries: () => request<{ items: LibraryAccess[] }>("/libraries"),
+  switchLibrary: (libraryId: string) =>
+    request<AuthSession>("/auth/switch-library", {
+      method: "POST",
+      body: JSON.stringify({ libraryId })
+    }),
   listMembers: () => request<{ items: LibraryMember[] }>("/members"),
   addMember: (payload: { email: string; role: LibraryRole }) =>
     request<LibraryMember>("/members", {

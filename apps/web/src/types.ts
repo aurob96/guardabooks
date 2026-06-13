@@ -17,6 +17,12 @@ export type AuthSession = {
   };
 };
 
+export type LibraryAccess = {
+  id: string;
+  name: string;
+  role: LibraryRole;
+};
+
 export type LibraryMember = {
   id: string;
   role: LibraryRole;

@@ -200,3 +200,4 @@ Al escanear o buscar un ISBN, si `ANTHROPIC_API_KEY` esta configurada, la API in
 Ver tambien [plan de descarga y multiusuario](docs/plan-descarga-multiusuario.md).
 Para publicar la app con dominio HTTPS unico, sigue [publicacion estable](docs/publicacion-estable.md).
 Para cuentas, roles y separacion por biblioteca, sigue [fase 2 multiusuarios](docs/fase-2-multiusuarios.md).
+Para pruebas de regresion, sigue [QA de regresion](docs/qa-regresion.md).

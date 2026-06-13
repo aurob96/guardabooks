@@ -21,6 +21,10 @@ export const memberUpdateSchema = z.object({
   role: z.enum(["OWNER", "EDITOR", "READER"])
 });
 
+export const switchLibrarySchema = z.object({
+  libraryId: z.string().uuid()
+});
+
 export const bookPayloadSchema = z.object({
   title: z.string().trim().min(1, "El titulo es obligatorio"),
   subtitle: z.string().trim().optional().nullable(),

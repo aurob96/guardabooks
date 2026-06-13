@@ -22,7 +22,8 @@ import {
   shelfSectionUpdateSchema,
   shelfUpdateSchema,
   subgenreSchema,
-  subgenreUpdateSchema
+  subgenreUpdateSchema,
+  switchLibrarySchema
 } from "./validation.js";
 import { cleanNullable, normalizeName, slugify } from "./utils.js";
 
@@ -1293,6 +1294,36 @@ app.post("/api/auth/login", async (req, res, next) => {
 
 app.get("/api/me", requireAuth, (req, res) => {
   res.json(serializeSession(req.auth!));
+});
+
+app.get("/api/libraries", requireAuth, async (req, res, next) => {
+  try {
+    const memberships = await prisma.libraryMember.findMany({
+      where: { userId: req.auth!.userId },
+      include: { library: true },
+      orderBy: { createdAt: "asc" }
+    });
+
+    res.json({
+      items: memberships.map((membership) => ({
+        id: membership.libraryId,
+        name: membership.library.name,
+        role: membership.role
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/switch-library", requireAuth, async (req, res, next) => {
+  try {
+    const payload = switchLibrarySchema.parse(req.body);
+    const auth = await buildAuthContext(req.auth!.userId, payload.libraryId);
+    res.json({ token: signToken({ sub: auth.userId, libraryId: auth.libraryId }), ...serializeSession(auth) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/members", requireAuth, async (req, res, next) => {
