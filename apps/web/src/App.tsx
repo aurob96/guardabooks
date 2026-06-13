@@ -1895,9 +1895,24 @@ export function App() {
                       {!isScanning && <div className="scanner-placeholder"><Camera size={28} /><span>Camara lista</span></div>}
                     </div>
                     {scanStatus && <p className="helper-text">{scanStatus}</p>}
+                    {cameraDevices.length > 1 && (
+                      <select value={selectedCameraId} onChange={(event) => setSelectedCameraId(event.target.value)} disabled={isScanning}>
+                        {cameraDevices.map((device, index) => (
+                          <option key={device.deviceId} value={device.deviceId}>
+                            {device.label || `Camara ${index + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <div className="two-cols">
                       <button type="button" className="primary" onClick={startScanner} disabled={isScanning || isLookupLoading}><Camera size={17} /> Escanear</button>
                       <button type="button" className="ghost" onClick={stopScanner} disabled={!isScanning}><Square size={15} /> Detener</button>
+                    </div>
+                    <div className="isbn-lookup-row">
+                      <input placeholder="ISBN manual" value={isbnLookup} onChange={(event) => setIsbnLookup(event.target.value)} />
+                      <button type="button" className="ghost" onClick={() => lookupIsbn(isbnLookup)} disabled={isLookupLoading}>
+                        <Search size={16} /> Buscar
+                      </button>
                     </div>
                   </div>
                 )}
@@ -2673,6 +2688,15 @@ export function App() {
                 )}
               </div>
               {scanStatus && <p className="helper-text">{scanStatus}</p>}
+              {cameraDevices.length > 1 && (
+                <select value={selectedCameraId} onChange={(event) => setSelectedCameraId(event.target.value)} disabled={isScanning}>
+                  {cameraDevices.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Camara ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="two-cols">
                 <button type="button" className="primary" onClick={startScanner} disabled={isScanning || isLookupLoading}>
                   <Camera size={17} /> Escanear
