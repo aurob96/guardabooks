@@ -5,6 +5,11 @@ const TOKEN_KEY = "biblioteca.auth.token";
 
 let authToken = window.localStorage.getItem(TOKEN_KEY) ?? "";
 
+function isNetworkFailure(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return /Load failed|Failed to fetch|NetworkError|cancelled|CORS|Could not connect/i.test(error.message);
+}
+
 export function setAuthToken(token: string) {
   authToken = token;
   if (token) {
@@ -19,14 +24,23 @@ export function getAuthToken() {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...(options?.headers ?? {})
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(options?.headers ?? {})
+      }
+    });
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      throw new Error("No pude conectar con el servidor. Revisa tu conexion e intenta de nuevo en unos minutos.");
     }
-  });
+    throw error;
+  }
 
   const contentType = response.headers.get("content-type") ?? "";
 
