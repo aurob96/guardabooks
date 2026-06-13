@@ -155,6 +155,8 @@ export function App() {
   const [bookSearchResults, setBookSearchResults] = useState<ExternalBookMetadata[]>([]);
   const [scanStatus, setScanStatus] = useState("");
   const [isScanning, setIsScanning] = useState(false);
+  const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
   const [isLookupLoading, setIsLookupLoading] = useState(false);
   const [isBookSearching, setIsBookSearching] = useState(false);
   const [classificationBook, setClassificationBook] = useState<Book | null>(null);
@@ -332,6 +334,21 @@ export function App() {
   useEffect(() => {
     return () => stopScanner();
   }, []);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        const videoDevices = devices.filter((device) => device.kind === "videoinput");
+        setCameraDevices(videoDevices);
+        if (!selectedCameraId && videoDevices.length > 0) {
+          const rearCamera = videoDevices.find((device) => /back|rear|environment|trasera|posterior/i.test(device.label));
+          setSelectedCameraId((rearCamera ?? videoDevices[0]).deviceId);
+        }
+      })
+      .catch(() => undefined);
+  }, [isScanning, selectedCameraId]);
 
   async function installApp() {
     if (!installPrompt) return;
@@ -631,6 +648,8 @@ export function App() {
         isbn10: isbn.length === 10 ? isbn : current.isbn10,
         isbn13: isbn.length === 13 ? isbn : current.isbn13
       }));
+      setBookEntryMethod("search");
+      setMessage("Conserve el ISBN en el formulario. Prueba buscar por titulo y autor; algunas editoriales no publican metadatos por ISBN.");
     } finally {
       setIsLookupLoading(false);
     }
@@ -681,6 +700,7 @@ export function App() {
       return;
     }
 
+    stopScanner();
     setError("");
     setMessage("");
     setScanStatus("Solicitando acceso a la camara...");
@@ -688,34 +708,60 @@ export function App() {
 
     try {
       const reader = new BrowserMultiFormatReader();
-      scannerControlsRef.current = await reader.decodeFromConstraints(
-        { video: { facingMode: { ideal: "environment" } } },
-        videoRef.current,
-        (result, _error, controls) => {
-          const text = result?.getText();
-          if (!text) {
-            return;
-          }
+      const rearCameraConstraints = {
+        deviceId: selectedCameraId ? { exact: selectedCameraId } : undefined,
+        facingMode: selectedCameraId ? undefined : { exact: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        focusMode: "continuous"
+      } as MediaTrackConstraints;
+      const constraints: MediaStreamConstraints[] = [
+        selectedCameraId
+          ? { video: rearCameraConstraints }
+          : { video: rearCameraConstraints },
+        { video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+        { video: true }
+      ];
 
-          const isbn = cleanIsbn(text);
-          if (!/^(?:\d{13}|\d{9}[\dX])$/.test(isbn)) {
-            setScanStatus(`Codigo detectado, pero no parece ISBN: ${text}`);
-            return;
-          }
+      let lastScanError: unknown = null;
+      for (const constraint of constraints) {
+        try {
+          scannerControlsRef.current = await reader.decodeFromConstraints(
+            constraint,
+            videoRef.current,
+            (result, _error, controls) => {
+              const text = result?.getText();
+              if (!text) {
+                return;
+              }
 
-          controls.stop();
-          scannerControlsRef.current = null;
-          setIsScanning(false);
-          setScanStatus(`ISBN detectado: ${isbn}`);
-          void lookupIsbn(isbn);
+              const isbn = cleanIsbn(text);
+              if (!/^(?:\d{13}|\d{9}[\dX])$/.test(isbn)) {
+                setScanStatus(`Codigo detectado, pero no parece ISBN: ${text}`);
+                return;
+              }
+
+              controls.stop();
+              scannerControlsRef.current = null;
+              setIsScanning(false);
+              setScanStatus(`ISBN detectado: ${isbn}`);
+              void lookupIsbn(isbn);
+            }
+          );
+          setScanStatus("Apunta la camara trasera al codigo ISBN. Acerca o aleja hasta que el codigo quede nitido.");
+          return;
+        } catch (scanAttemptError) {
+          lastScanError = scanAttemptError;
         }
-      );
-      setScanStatus("Apunta la camara al codigo de barras ISBN");
+      }
+
+      throw lastScanError;
     } catch (scanError) {
       setIsScanning(false);
       scannerControlsRef.current = null;
-      setError(scanError instanceof Error ? scanError.message : "No se pudo iniciar la camara");
-      setScanStatus("");
+      const message = scanError instanceof Error ? scanError.message : "No se pudo iniciar la camara";
+      setError(`${message}. Si estas en celular, abre la app por HTTPS y revisa permisos de camara. Tambien puedes escribir el ISBN manualmente.`);
+      setScanStatus("No se pudo usar la camara. Escribe el ISBN manualmente o cambia la camara.");
     }
   }
 

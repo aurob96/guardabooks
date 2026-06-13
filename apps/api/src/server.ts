@@ -441,6 +441,49 @@ function cleanIsbn(value: string) {
   return value.replace(/[^0-9X]/gi, "").toUpperCase();
 }
 
+function isValidIsbn10(isbn: string) {
+  if (!/^\d{9}[\dX]$/.test(isbn)) return false;
+  const sum = isbn.split("").reduce((total, character, index) => {
+    const value = character === "X" ? 10 : Number(character);
+    return total + value * (10 - index);
+  }, 0);
+  return sum % 11 === 0;
+}
+
+function isValidIsbn13(isbn: string) {
+  if (!/^\d{13}$/.test(isbn)) return false;
+  const sum = isbn.split("").reduce((total, character, index) => total + Number(character) * (index % 2 === 0 ? 1 : 3), 0);
+  return sum % 10 === 0;
+}
+
+function isbn10To13(isbn10: string) {
+  if (!isValidIsbn10(isbn10)) return null;
+  const base = `978${isbn10.slice(0, 9)}`;
+  const sum = base.split("").reduce((total, character, index) => total + Number(character) * (index % 2 === 0 ? 1 : 3), 0);
+  const checkDigit = (10 - (sum % 10)) % 10;
+  return `${base}${checkDigit}`;
+}
+
+function isbn13To10(isbn13: string) {
+  if (!isValidIsbn13(isbn13) || !isbn13.startsWith("978")) return null;
+  const base = isbn13.slice(3, 12);
+  const sum = base.split("").reduce((total, character, index) => total + Number(character) * (10 - index), 0);
+  const checkValue = (11 - (sum % 11)) % 11;
+  const checkDigit = checkValue === 10 ? "X" : String(checkValue);
+  return `${base}${checkDigit}`;
+}
+
+function isbnVariants(isbn: string) {
+  const cleaned = cleanIsbn(isbn);
+  const variants = new Set<string>();
+  if (isValidIsbn10(cleaned) || isValidIsbn13(cleaned)) {
+    variants.add(cleaned);
+  }
+  const converted = cleaned.length === 10 ? isbn10To13(cleaned) : isbn13To10(cleaned);
+  if (converted) variants.add(converted);
+  return [...variants];
+}
+
 function normalizeForMatch(value: string) {
   return value
     .trim()
@@ -620,6 +663,34 @@ async function lookupOpenLibrary(isbn: string) {
     languageCode: Array.isArray(book.languages) ? String(book.languages[0]?.key ?? "").split("/").pop() : null,
     synopsis: description,
     coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`
+  };
+}
+
+async function lookupOpenLibraryBooksApi(isbn: string) {
+  const params = new URLSearchParams({
+    bibkeys: `ISBN:${isbn}`,
+    format: "json",
+    jscmd: "data"
+  });
+  const payload = await fetchJson(`https://openlibrary.org/api/books?${params.toString()}`);
+  const book = payload?.[`ISBN:${isbn}`];
+  if (!book?.title) return null;
+
+  return {
+    source: "open_library",
+    isbn10: isbn.length === 10 ? isbn : null,
+    isbn13: isbn.length === 13 ? isbn : null,
+    title: book.title,
+    authors: stringList(book.authors?.map((author: any) => author?.name)).slice(0, 6),
+    publisher: firstText(book.publishers?.map((publisher: any) => publisher?.name)),
+    publicationYear: parseYear(book.publish_date),
+    pageCount: typeof book.number_of_pages === "number" ? book.number_of_pages : null,
+    genre: firstText(book.subjects?.map((subject: any) => subject?.name)),
+    subjects: stringList(book.subjects?.map((subject: any) => subject?.name)).slice(0, 12),
+    deweyCode: firstText(book.classifications?.dewey_decimal_class),
+    languageCode: null,
+    synopsis: book.notes ?? null,
+    coverUrl: book.cover?.large ?? book.cover?.medium ?? book.cover?.small ?? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`
   };
 }
 
@@ -1522,21 +1593,36 @@ app.delete("/api/subgenres/:id", async (req, res, next) => {
 app.get("/api/external-books/isbn/:isbn", async (req, res, next) => {
   try {
     const isbn = cleanIsbn(req.params.isbn);
-    if (!/^(?:\d{13}|\d{9}[\dX])$/.test(isbn)) {
-      throw new AppError(400, "INVALID_ISBN", "El ISBN debe tener 10 o 13 caracteres validos");
+    const variants = isbnVariants(isbn);
+    if (variants.length === 0) {
+      throw new AppError(400, "INVALID_ISBN", "El ISBN no supera la validacion. Revisa que el codigo se haya escaneado completo.");
     }
 
-    const openLibrary = await lookupOpenLibrary(isbn);
-    if (openLibrary?.title && openLibrary.authors.length > 0) {
-      return res.json(await enrichWithDeweyGenreSuggestion(openLibrary, currentLibraryId(req)));
+    const lookups = variants.flatMap((variant) => [
+      () => lookupOpenLibrary(variant),
+      () => lookupOpenLibraryBooksApi(variant),
+      () => lookupGoogleBooks(variant)
+    ]);
+
+    let result = null;
+    for (const lookup of lookups) {
+      result = await lookup().catch(() => null);
+      if (result?.title) break;
     }
 
-    const googleBooks = await lookupGoogleBooks(isbn);
-    const result = googleBooks ?? openLibrary;
     if (!result) {
-      throw new AppError(404, "BOOK_METADATA_NOT_FOUND", "No se encontraron datos publicos para ese ISBN");
+      throw new AppError(
+        404,
+        "BOOK_METADATA_NOT_FOUND",
+        `No encontre metadatos publicos para ${variants.join(" / ")}. Puedes buscar por titulo y autor o guardar el ISBN manualmente.`
+      );
     }
 
+    result = {
+      ...result,
+      isbn10: result.isbn10 ?? variants.find((variant) => variant.length === 10) ?? null,
+      isbn13: result.isbn13 ?? variants.find((variant) => variant.length === 13) ?? null
+    };
     res.json(await enrichWithDeweyGenreSuggestion(result, currentLibraryId(req)));
   } catch (error) {
     next(error);

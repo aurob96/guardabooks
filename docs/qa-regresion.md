@@ -19,6 +19,8 @@ El script crea usuarios, una biblioteca de prueba, generos, estanterias, repisas
 - Crear estanteria con genero asociado.
 - Crear repisa con capacidad y genero asociado.
 - Crear libro manual con autor, editorial, genero, repisa y tejuelo.
+- Buscar libro por ISBN usando un ISBN-10 y su equivalente ISBN-13.
+- Cuando un ISBN no tenga metadatos publicos, conservar el ISBN y continuar por busqueda de titulo/autor.
 - Editar libro existente.
 - Detectar duplicado por titulo y autor.
 - Prestar libro.
@@ -39,6 +41,7 @@ El script crea usuarios, una biblioteca de prueba, generos, estanterias, repisas
 - Acceder a `/api/books` sin token.
 - Crear libro con titulo vacio.
 - Crear libro con ISBN invalido.
+- Escanear codigo que no supera digito de control ISBN.
 - Crear libro en repisa llena.
 - Editar o eliminar libro de otra biblioteca.
 - Crear prestamo para libro ya prestado.
