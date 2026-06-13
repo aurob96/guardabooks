@@ -487,40 +487,49 @@ export function App() {
     });
     const deweyHierarchy = [metadata.genre, ...(metadata.subjects ?? [])].filter((value): value is string => Boolean(value)).slice(0, 5);
     const deweyExplanation = suggestion?.razon || (metadata.deweyCode ? "Codigo Dewey importado desde metadatos publicos." : "");
+    const importedGenre = metadata.genre ?? suggestion?.genero_principal ?? "";
+    const rawDeweyGenre = [metadata.deweyCode, ...(metadata.subjects ?? [])].filter(Boolean).join(" | ") || importedGenre;
     setDeweyGenreSuggestion(suggestion);
     setBookSearchResults([]);
     setBookForm((current) => ({
       ...current,
-      title: metadata.title ?? current.title,
-      authors: metadata.authors?.length ? metadata.authors : current.authors,
-      isbn10: metadata.isbn10 ?? current.isbn10,
-      isbn13: metadata.isbn13 ?? current.isbn13,
-      publisher: metadata.publisher ?? current.publisher,
-      publicationYear: metadata.publicationYear ?? current.publicationYear,
-      pageCount: metadata.pageCount ?? current.pageCount,
-      genre: metadata.genre ?? current.genre,
-      genreId: suggestion?.confianza === "alta" && selection.genreId ? selection.genreId : current.genreId,
-      subgenreId: suggestion?.confianza === "alta" && selection.subgenreId ? selection.subgenreId : current.subgenreId,
-      deweyGenreRaw: [metadata.deweyCode, ...(metadata.subjects ?? [])].filter(Boolean).join(" | ") || metadata.genre || current.deweyGenreRaw,
-      deweyCode: metadata.deweyCode ?? current.deweyCode,
-      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : current.deweyHierarchy,
-      deweyExplanation: metadata.deweyCode ? deweyExplanation : current.deweyExplanation,
-      languageCode: metadata.languageCode ?? current.languageCode,
-      synopsis: metadata.synopsis ?? current.synopsis,
-      coverUrl: metadata.coverUrl ?? current.coverUrl
+      title: metadata.title ?? "",
+      authors: metadata.authors?.length ? metadata.authors : [""],
+      isbn10: metadata.isbn10 ?? "",
+      isbn13: metadata.isbn13 ?? "",
+      publisher: metadata.publisher ?? "",
+      publicationYear: metadata.publicationYear ?? "",
+      pageCount: metadata.pageCount ?? "",
+      genre: importedGenre,
+      genreId: suggestion?.confianza === "alta" && selection.genreId ? selection.genreId : "",
+      subgenreId: suggestion?.confianza === "alta" && selection.subgenreId ? selection.subgenreId : "",
+      deweyGenreRaw: rawDeweyGenre,
+      deweyCode: metadata.deweyCode ?? "",
+      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : [],
+      deweyExplanation: metadata.deweyCode ? deweyExplanation : "",
+      lcCode: "",
+      lcHierarchy: [],
+      lcExplanation: "",
+      customTags: [],
+      languageCode: metadata.languageCode ?? "es",
+      synopsis: metadata.synopsis ?? "",
+      coverUrl: metadata.coverUrl ?? "",
+      labelSerial: "",
+      labelSystem: current.labelSystem,
+      labelSize: current.labelSize
     }));
-    setClassificationDraft((current) => ({
-      ...current,
-      deweyCode: metadata.deweyCode ?? current.deweyCode,
-      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : current.deweyHierarchy,
-      deweyExplanation: metadata.deweyCode ? deweyExplanation : current.deweyExplanation,
-      suggestedGenre: suggestion?.genero_principal ?? current.suggestedGenre,
-      suggestedSubgenre: suggestion?.subgenero ?? current.suggestedSubgenre,
-      genreConfidence: suggestion?.confianza ?? current.genreConfidence,
-      genreReason: suggestion?.razon ?? current.genreReason,
-      genreId: selection.genreId || current.genreId,
-      subgenreId: selection.subgenreId || current.subgenreId
-    }));
+    setClassificationDraft({
+      ...freshClassification(),
+      deweyCode: metadata.deweyCode ?? "",
+      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : [],
+      deweyExplanation: metadata.deweyCode ? deweyExplanation : "",
+      suggestedGenre: suggestion?.genero_principal ?? null,
+      suggestedSubgenre: suggestion?.subgenero ?? null,
+      genreConfidence: suggestion?.confianza ?? null,
+      genreReason: suggestion?.razon ?? null,
+      genreId: selection.genreId,
+      subgenreId: selection.subgenreId
+    });
   }
 
   function applyDeweyGenreSuggestion() {
@@ -709,6 +718,35 @@ export function App() {
     setError("");
     setMessage("");
     setIsbnLookupNotice(null);
+    setDuplicateMatches([]);
+    setPendingBookPayload(null);
+    setDeweyGenreSuggestion(null);
+    setClassificationDraft(freshClassification());
+    setBookSearchResults([]);
+    setBookForm((current) => ({
+      ...current,
+      title: "",
+      authors: [""],
+      isbn10: isbn.length === 10 ? isbn : "",
+      isbn13: isbn.length === 13 ? isbn : "",
+      publisher: "",
+      publicationYear: "",
+      pageCount: "",
+      genre: "",
+      genreId: "",
+      subgenreId: "",
+      deweyGenreRaw: "",
+      deweyCode: "",
+      deweyHierarchy: [],
+      deweyExplanation: "",
+      lcCode: "",
+      lcHierarchy: [],
+      lcExplanation: "",
+      customTags: [],
+      synopsis: "",
+      coverUrl: "",
+      labelSerial: ""
+    }));
     setIsLookupLoading(true);
     try {
       const metadata = await api.lookupIsbn(isbn);
@@ -718,9 +756,9 @@ export function App() {
       void checkDuplicates({
         ...bookForm,
         title: metadata.title,
-        authors: metadata.authors?.length ? metadata.authors : bookForm.authors,
-        isbn10: metadata.isbn10 ?? bookForm.isbn10,
-        isbn13: metadata.isbn13 ?? bookForm.isbn13
+        authors: metadata.authors?.length ? metadata.authors : [""],
+        isbn10: metadata.isbn10 ?? "",
+        isbn13: metadata.isbn13 ?? ""
       } as BookPayload);
       setIsbnLookupNotice({ type: "success", text: `Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}.` });
       setMessage(`Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}. Revisa el formulario antes de guardar.`);
@@ -749,6 +787,7 @@ export function App() {
 
     setError("");
     setMessage("");
+    setBookSearchResults([]);
     setIsBookSearching(true);
     try {
       const result = await api.searchExternalBooks({
@@ -773,9 +812,9 @@ export function App() {
     void checkDuplicates({
       ...bookForm,
       title: metadata.title,
-      authors: metadata.authors?.length ? metadata.authors : bookForm.authors,
-      isbn10: metadata.isbn10 ?? bookForm.isbn10,
-      isbn13: metadata.isbn13 ?? bookForm.isbn13
+      authors: metadata.authors?.length ? metadata.authors : [""],
+      isbn10: metadata.isbn10 ?? "",
+      isbn13: metadata.isbn13 ?? ""
     } as BookPayload);
     setMessage(`Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}. Revisa el formulario antes de guardar.`);
   }
