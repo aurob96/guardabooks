@@ -151,6 +151,7 @@ export function App() {
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
   const [editingBookId, setEditingBookId] = useState("");
   const [isbnLookup, setIsbnLookup] = useState("");
+  const [isbnLookupNotice, setIsbnLookupNotice] = useState<{ type: "error" | "warning" | "success"; text: string } | null>(null);
   const [bookSearchForm, setBookSearchForm] = useState({ title: "", author: "", publisher: "", year: "" });
   const [bookSearchResults, setBookSearchResults] = useState<ExternalBookMetadata[]>([]);
   const [scanStatus, setScanStatus] = useState("");
@@ -621,12 +622,13 @@ export function App() {
   async function lookupIsbn(isbnValue: string) {
     const isbn = cleanIsbn(isbnValue);
     if (!/^(?:\d{13}|\d{9}[\dX])$/.test(isbn)) {
-      setError("El ISBN debe tener 10 o 13 caracteres validos");
+      setIsbnLookupNotice({ type: "error", text: "El ISBN debe tener 10 o 13 caracteres validos." });
       return;
     }
 
     setError("");
     setMessage("");
+    setIsbnLookupNotice(null);
     setIsLookupLoading(true);
     try {
       const metadata = await api.lookupIsbn(isbn);
@@ -640,16 +642,19 @@ export function App() {
         isbn10: metadata.isbn10 ?? bookForm.isbn10,
         isbn13: metadata.isbn13 ?? bookForm.isbn13
       } as BookPayload);
+      setIsbnLookupNotice({ type: "success", text: `Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}.` });
       setMessage(`Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}. Revisa el formulario antes de guardar.`);
     } catch (lookupError) {
-      setError(lookupError instanceof Error ? lookupError.message : "No se encontraron datos para ese ISBN");
+      setIsbnLookupNotice({
+        type: "warning",
+        text: lookupError instanceof Error ? lookupError.message : "No se encontraron datos para ese ISBN."
+      });
       setBookForm((current) => ({
         ...current,
         isbn10: isbn.length === 10 ? isbn : current.isbn10,
         isbn13: isbn.length === 13 ? isbn : current.isbn13
       }));
       setBookEntryMethod("search");
-      setMessage("Conserve el ISBN en el formulario. Prueba buscar por titulo y autor; algunas editoriales no publican metadatos por ISBN.");
     } finally {
       setIsLookupLoading(false);
     }
@@ -827,6 +832,7 @@ export function App() {
       setDeweyGenreSuggestion(null);
       setEditingBookId("");
       setIsbnLookup("");
+      setIsbnLookupNotice(null);
       setPendingBookPayload(null);
       setDuplicateMatches([]);
       setActiveView("catalog");
@@ -855,6 +861,7 @@ export function App() {
     setPendingBookPayload(null);
     setBookSearchResults([]);
     setIsbnLookup("");
+    setIsbnLookupNotice(null);
     setBookEntryMethod("");
     setBookFlowStep(1);
     setActiveView("catalog");
@@ -873,6 +880,7 @@ export function App() {
     setDuplicateMatches([]);
     setPendingBookPayload(null);
     setBookSearchResults([]);
+    setIsbnLookupNotice(null);
     setBookFlowStep(1);
     setBookEntryMethod("");
     setActiveView("catalog");
@@ -884,6 +892,7 @@ export function App() {
 
   function chooseBookEntryMethod(method: "scan" | "isbn" | "search" | "manual") {
     setBookEntryMethod(method);
+    setIsbnLookupNotice(null);
     if (method === "manual") {
       setBookFlowStep(2);
     }
@@ -1914,18 +1923,45 @@ export function App() {
                         <Search size={16} /> Buscar
                       </button>
                     </div>
+                    {isbnLookupNotice && (
+                      <div className={`inline-notice ${isbnLookupNotice.type}`}>
+                        <p>{isbnLookupNotice.text}</p>
+                        {isbnLookupNotice.type === "warning" && (
+                          <button type="button" className="ghost" onClick={() => setBookEntryMethod("search")}>
+                            <BookOpen size={16} /> Buscar por titulo
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {bookEntryMethod === "isbn" && (
-                  <div className="isbn-lookup-row flow-tool">
-                    <input placeholder="ISBN manual" value={isbnLookup} onChange={(event) => setIsbnLookup(event.target.value)} />
-                    <button type="button" className="primary" onClick={() => lookupIsbn(isbnLookup)} disabled={isLookupLoading}><Search size={16} /> Buscar</button>
+                  <div className="flow-tool">
+                    <div className="isbn-lookup-row">
+                      <input placeholder="ISBN manual" value={isbnLookup} onChange={(event) => setIsbnLookup(event.target.value)} />
+                      <button type="button" className="primary" onClick={() => lookupIsbn(isbnLookup)} disabled={isLookupLoading}><Search size={16} /> Buscar</button>
+                    </div>
+                    {isbnLookupNotice && (
+                      <div className={`inline-notice ${isbnLookupNotice.type}`}>
+                        <p>{isbnLookupNotice.text}</p>
+                        {isbnLookupNotice.type === "warning" && (
+                          <button type="button" className="ghost" onClick={() => setBookEntryMethod("search")}>
+                            <BookOpen size={16} /> Buscar por titulo
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {bookEntryMethod === "search" && (
                   <div className="book-search-panel flow-tool">
+                    {isbnLookupNotice && (
+                      <div className={`inline-notice ${isbnLookupNotice.type}`}>
+                        <p>{isbnLookupNotice.text}</p>
+                      </div>
+                    )}
                     <div className="two-cols">
                       <input placeholder="Titulo sin ISBN" value={bookSearchForm.title} onChange={(event) => setBookSearchForm({ ...bookSearchForm, title: event.target.value })} />
                       <input placeholder="Autor opcional" value={bookSearchForm.author} onChange={(event) => setBookSearchForm({ ...bookSearchForm, author: event.target.value })} />
@@ -2718,6 +2754,16 @@ export function App() {
                   <Search size={16} /> Buscar
                 </button>
               </div>
+              {isbnLookupNotice && (
+                <div className={`inline-notice ${isbnLookupNotice.type}`}>
+                  <p>{isbnLookupNotice.text}</p>
+                  {isbnLookupNotice.type === "warning" && (
+                    <button type="button" className="ghost" onClick={() => setDrawerMode("book")}>
+                      <BookOpen size={16} /> Buscar por titulo
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="book-search-panel">
                 <div className="two-cols">
                   <input

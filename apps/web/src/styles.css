@@ -564,6 +564,36 @@ textarea:focus {
   color: #6e5a28;
 }
 
+.inline-notice {
+  border-radius: 8px;
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.inline-notice p {
+  margin: 0;
+}
+
+.inline-notice.success {
+  background: #e4f4ec;
+  color: #14533e;
+}
+
+.inline-notice.error {
+  background: #fae6e1;
+  color: #853120;
+}
+
+.inline-notice.warning {
+  background: #fff8e4;
+  color: #6e5a28;
+}
+
+.inline-notice button {
+  justify-self: start;
+}
+
 .duplicate-alert {
   background: #fff8e4;
   border: 1px solid #e1bd63;
