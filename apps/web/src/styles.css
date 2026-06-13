@@ -237,6 +237,13 @@ textarea:focus {
   white-space: nowrap;
 }
 
+.add-book-button {
+  background: #0f766e;
+  color: #fffdf7;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .install-button {
   background: #0f766e;
   color: #fffdf7;
@@ -2307,6 +2314,7 @@ textarea:focus {
   }
 
   .tools-button,
+  .add-book-button,
   .install-button {
     min-width: 42px;
     padding: 0;
@@ -2314,11 +2322,13 @@ textarea:focus {
   }
 
   .tools-button svg,
+  .add-book-button svg,
   .install-button svg {
     margin: 0;
   }
 
   .tools-button,
+  .add-book-button,
   .install-button {
     font-size: 0;
   }

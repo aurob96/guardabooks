@@ -2385,6 +2385,9 @@ export function App() {
           ) : (
             <span className="session-chip">{session.library.name} · {session.library.role}</span>
           )}
+          <button className="add-book-button" onClick={startNewBookFlow} title="Agregar libro">
+            <Plus size={18} /> Agregar
+          </button>
           {installPrompt && (
             <button className="install-button" onClick={installApp}>
               <Download size={18} /> Instalar
