@@ -1743,10 +1743,17 @@ app.post("/api/books/duplicates", async (req, res, next) => {
     const payload = bookPayloadSchema.pick({ title: true, authors: true, isbn10: true, isbn13: true }).parse(req.body);
     const isbn10 = cleanNullable(payload.isbn10) as string | null;
     const isbn13 = cleanNullable(payload.isbn13) as string | null;
+    const isbnCandidates = [...new Set([...(isbn10 ? isbnVariants(isbn10) : []), ...(isbn13 ? isbnVariants(isbn13) : [])])];
     const candidateFilters: Prisma.BookWhereInput[] = [];
-    if (isbn10) candidateFilters.push({ isbn10 });
-    if (isbn13) candidateFilters.push({ isbn13 });
-    if (payload.title.trim()) candidateFilters.push({ title: { contains: payload.title.slice(0, 18), mode: "insensitive" } });
+    if (isbnCandidates.length > 0) {
+      candidateFilters.push({ OR: [{ isbn10: { in: isbnCandidates } }, { isbn13: { in: isbnCandidates } }] });
+    }
+    if (payload.title.trim()) {
+      const titleWords = normalizeForMatch(payload.title).split(" ").filter((word) => word.length > 3).slice(0, 4);
+      for (const word of titleWords) {
+        candidateFilters.push({ title: { contains: word, mode: "insensitive" } });
+      }
+    }
     if (payload.authors[0]) {
       candidateFilters.push({
         authors: { some: { author: { fullName: { contains: payload.authors[0], mode: "insensitive" } } } }
@@ -1764,21 +1771,24 @@ app.post("/api/books/duplicates", async (req, res, next) => {
     });
 
     const incomingText = bookMatchText(payload.title, payload.authors);
+    const incomingTitle = normalizeForMatch(payload.title);
     const matches = candidates
       .map((book: any) => {
         const serialized = serializeBook(book);
         const isbnMatch =
-          Boolean(isbn10 && book.isbn10 === isbn10) ||
-          Boolean(isbn13 && book.isbn13 === isbn13);
+          Boolean(book.isbn10 && isbnCandidates.includes(book.isbn10)) ||
+          Boolean(book.isbn13 && isbnCandidates.includes(book.isbn13));
         const fuzzyScore = similarity(incomingText, bookMatchText(book.title, serialized.authors.map((author: any) => author.fullName)));
+        const titleScore = similarity(incomingTitle, normalizeForMatch(book.title));
+        const score = Math.max(fuzzyScore, titleScore);
         return {
           book: serialized,
           matchType: isbnMatch ? "ISBN" : "FUZZY",
-          score: isbnMatch ? 1 : Number(fuzzyScore.toFixed(2)),
-          reason: isbnMatch ? "Coincidencia exacta por ISBN" : "Titulo y autor similares"
+          score: isbnMatch ? 1 : Number(score.toFixed(2)),
+          reason: isbnMatch ? "Coincidencia por ISBN equivalente" : titleScore >= fuzzyScore ? "Titulo similar" : "Titulo y autor similares"
         };
       })
-      .filter((match) => match.matchType === "ISBN" || match.score >= 0.72)
+      .filter((match) => match.matchType === "ISBN" || match.score >= 0.68)
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 

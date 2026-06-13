@@ -102,6 +102,25 @@ const emptyClassification: ClassificationPayload = {
   customTags: []
 };
 
+function freshBookForm(): BookPayload {
+  return {
+    ...initialBookForm,
+    authors: [""],
+    customTags: [],
+    deweyHierarchy: [],
+    lcHierarchy: []
+  };
+}
+
+function freshClassification(): ClassificationPayload {
+  return {
+    ...emptyClassification,
+    deweyHierarchy: [],
+    lcHierarchy: [],
+    customTags: []
+  };
+}
+
 function formatAvailability(value: AvailabilityStatus) {
   return value === "PRESTADO" ? "Prestado" : "En mi biblioteca";
 }
@@ -145,7 +164,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [bookForm, setBookForm] = useState<BookPayload>(initialBookForm);
+  const [bookForm, setBookForm] = useState<BookPayload>(() => freshBookForm());
   const [deweyGenreSuggestion, setDeweyGenreSuggestion] = useState<DeweyGenreSuggestion | null>(null);
   const [pendingBookPayload, setPendingBookPayload] = useState<BookPayload | null>(null);
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
@@ -161,7 +180,7 @@ export function App() {
   const [isLookupLoading, setIsLookupLoading] = useState(false);
   const [isBookSearching, setIsBookSearching] = useState(false);
   const [classificationBook, setClassificationBook] = useState<Book | null>(null);
-  const [classificationDraft, setClassificationDraft] = useState<ClassificationPayload>(emptyClassification);
+  const [classificationDraft, setClassificationDraft] = useState<ClassificationPayload>(() => freshClassification());
   const [isClassifying, setIsClassifying] = useState(false);
   const [genreForm, setGenreForm] = useState({ name: "", color: "#461e60", icon: "ti-book" });
   const [subgenreForm, setSubgenreForm] = useState({ genreId: "", name: "" });
@@ -430,7 +449,10 @@ export function App() {
 
   function applyExternalBook(metadata: ExternalBookMetadata) {
     const suggestion = metadata.genreSuggestion ?? null;
+    const deweyHierarchy = [metadata.genre, ...(metadata.subjects ?? [])].filter((value): value is string => Boolean(value)).slice(0, 5);
+    const deweyExplanation = suggestion?.razon || (metadata.deweyCode ? "Codigo Dewey importado desde metadatos publicos." : "");
     setDeweyGenreSuggestion(suggestion);
+    setBookSearchResults([]);
     setBookForm((current) => ({
       ...current,
       title: metadata.title ?? current.title,
@@ -445,9 +467,23 @@ export function App() {
       subgenreId: suggestion?.confianza === "alta" && suggestion.subgenreId ? suggestion.subgenreId : current.subgenreId,
       deweyGenreRaw: [metadata.deweyCode, ...(metadata.subjects ?? [])].filter(Boolean).join(" | ") || metadata.genre || current.deweyGenreRaw,
       deweyCode: metadata.deweyCode ?? current.deweyCode,
+      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : current.deweyHierarchy,
+      deweyExplanation: metadata.deweyCode ? deweyExplanation : current.deweyExplanation,
       languageCode: metadata.languageCode ?? current.languageCode,
       synopsis: metadata.synopsis ?? current.synopsis,
       coverUrl: metadata.coverUrl ?? current.coverUrl
+    }));
+    setClassificationDraft((current) => ({
+      ...current,
+      deweyCode: metadata.deweyCode ?? current.deweyCode,
+      deweyHierarchy: metadata.deweyCode ? deweyHierarchy : current.deweyHierarchy,
+      deweyExplanation: metadata.deweyCode ? deweyExplanation : current.deweyExplanation,
+      suggestedGenre: suggestion?.genero_principal ?? current.suggestedGenre,
+      suggestedSubgenre: suggestion?.subgenero ?? current.suggestedSubgenre,
+      genreConfidence: suggestion?.confianza ?? current.genreConfidence,
+      genreReason: suggestion?.razon ?? current.genreReason,
+      genreId: suggestion?.genreId ?? current.genreId,
+      subgenreId: suggestion?.subgenreId ?? current.subgenreId
     }));
   }
 
@@ -700,6 +736,19 @@ export function App() {
     setMessage(`Datos importados desde ${metadata.source === "open_library" ? "Open Library" : "Google Books"}. Revisa el formulario antes de guardar.`);
   }
 
+  function resetBookEntryState() {
+    setBookForm(freshBookForm());
+    setClassificationDraft(freshClassification());
+    setDeweyGenreSuggestion(null);
+    setDuplicateMatches([]);
+    setPendingBookPayload(null);
+    setBookSearchResults([]);
+    setBookSearchForm({ title: "", author: "", publisher: "", year: "" });
+    setIsbnLookup("");
+    setIsbnLookupNotice(null);
+    setScanStatus("");
+  }
+
   async function startScanner() {
     if (!videoRef.current) {
       return;
@@ -828,13 +877,8 @@ export function App() {
       } else {
         await api.createBook(payload);
       }
-      setBookForm(initialBookForm);
-      setDeweyGenreSuggestion(null);
       setEditingBookId("");
-      setIsbnLookup("");
-      setIsbnLookupNotice(null);
-      setPendingBookPayload(null);
-      setDuplicateMatches([]);
+      resetBookEntryState();
       setActiveView("catalog");
       setIsToolsOpen(false);
       setDrawerMode("menu");
@@ -855,13 +899,7 @@ export function App() {
   function startNewBookFlow() {
     stopScanner();
     setEditingBookId("");
-    setBookForm(initialBookForm);
-    setDeweyGenreSuggestion(null);
-    setDuplicateMatches([]);
-    setPendingBookPayload(null);
-    setBookSearchResults([]);
-    setIsbnLookup("");
-    setIsbnLookupNotice(null);
+    resetBookEntryState();
     setBookEntryMethod("");
     setBookFlowStep(1);
     setActiveView("catalog");
@@ -875,12 +913,7 @@ export function App() {
   function cancelBookFlow() {
     stopScanner();
     setEditingBookId("");
-    setBookForm(initialBookForm);
-    setDeweyGenreSuggestion(null);
-    setDuplicateMatches([]);
-    setPendingBookPayload(null);
-    setBookSearchResults([]);
-    setIsbnLookupNotice(null);
+    resetBookEntryState();
     setBookFlowStep(1);
     setBookEntryMethod("");
     setActiveView("catalog");
@@ -909,10 +942,7 @@ export function App() {
     setMessage("");
     try {
       await api.updateBook(match.book.id, pendingBookPayload);
-      setBookForm(initialBookForm);
-      setDeweyGenreSuggestion(null);
-      setPendingBookPayload(null);
-      setDuplicateMatches([]);
+      resetBookEntryState();
       setMessage("Libro existente actualizado con la informacion nueva");
       await loadData();
     } catch (updateError) {
@@ -1463,7 +1493,12 @@ export function App() {
   function startEditBook(book: Book) {
     setEditingBookId(book.id);
     setBookForm(bookToForm(book));
+    setClassificationDraft(classificationFromBook(book));
     setDeweyGenreSuggestion(null);
+    setBookSearchResults([]);
+    setBookSearchForm({ title: "", author: "", publisher: "", year: "" });
+    setIsbnLookup("");
+    setIsbnLookupNotice(null);
     setMessage(`Editando "${book.title}"`);
     setActiveView("catalog");
     setIsToolsOpen(true);
@@ -1477,8 +1512,7 @@ export function App() {
 
   function cancelEditBook() {
     setEditingBookId("");
-    setBookForm(initialBookForm);
-    setDeweyGenreSuggestion(null);
+    resetBookEntryState();
     setMessage("");
     setActiveView("catalog");
     setIsToolsOpen(false);
