@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AvailabilityStatus {
+  EN_MI_BIBLIOTECA
+  PRESTADO
+}
+
+enum ReadingStatus {
+  SIN_ESTADO
+  LEIDO
+  POR_LEER
+}
+
+enum LoanStatus {
+  ACTIVO
+  DEVUELTO
+}
+
+enum LibraryRole {
+  OWNER
+  EDITOR
+  READER
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  memberships  LibraryMember[]
+}
+
+model Library {
+  id          String          @id @default(uuid())
+  name        String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  members     LibraryMember[]
+  genres      Genre[]
+  shelves     Shelf[]
+  books       Book[]
+}
+
+model LibraryMember {
+  id        String      @id @default(uuid())
+  userId    String
+  libraryId String
+  role      LibraryRole @default(OWNER)
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  library   Library     @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, libraryId])
+  @@index([libraryId])
+}
+
+model Author {
+  id             String       @id @default(uuid())
+  fullName       String
+  normalizedName String       @unique
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  books          BookAuthor[]
+}
+
+model Publisher {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  books     Book[]
+}
+
+model Genre {
+  id        String     @id @default(uuid())
+  libraryId String?
+  name      String
+  slug      String
+  color     String     @default("#461e60")
+  icon      String     @default("ti-book")
+  createdAt DateTime   @default(now())
+  library   Library?   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  subgenres Subgenre[]
+  sections  ShelfSection[]
+  sectionGenres ShelfSectionGenre[]
+  shelves   ShelfGenre[]
+  books     Book[]
+
+  @@unique([libraryId, slug])
+  @@index([libraryId])
+}
+
+model Subgenre {
+  id        String   @id @default(uuid())
+  genreId   String
+  name      String
+  slug      String
+  genre     Genre    @relation(fields: [genreId], references: [id], onDelete: Cascade)
+  books     Book[]
+
+  @@unique([genreId, slug])
+}
+
+model Shelf {
+  id           String         @id @default(uuid())
+  libraryId    String?
+  name         String
+  description  String?
+  homeLocation String
+  mapX         Int            @default(80)
+  mapY         Int            @default(80)
+  mapWidth     Int            @default(130)
+  mapHeight    Int            @default(72)
+  capacity     Int            @default(40)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  library      Library?       @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  genres       ShelfGenre[]
+  sections     ShelfSection[]
+  books        Book[]
+
+  @@unique([libraryId, name])
+  @@index([libraryId])
+}
+
+model ShelfGenre {
+  shelfId String
+  genreId String
+  shelf   Shelf  @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([shelfId, genreId])
+}
+
+model ShelfSection {
+  id          String   @id @default(uuid())
+  shelfId     String
+  name        String
+  position    Int
+  description String?
+  genreId     String?
+  capacity    Int      @default(12)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  shelf       Shelf    @relation(fields: [shelfId], references: [id], onDelete: Cascade)
+  genreRef    Genre?   @relation(fields: [genreId], references: [id], onDelete: SetNull)
+  genres      ShelfSectionGenre[]
+  books       Book[]
+
+  @@unique([shelfId, position])
+}
+
+model ShelfSectionGenre {
+  shelfSectionId String
+  genreId        String
+  shelfSection   ShelfSection @relation(fields: [shelfSectionId], references: [id], onDelete: Cascade)
+  genre          Genre        @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([shelfSectionId, genreId])
+}
+
+model Book {
+  id                 String             @id @default(uuid())
+  libraryId          String?
+  title              String
+  subtitle           String?
+  isbn10             String?
+  isbn13             String?
+  publisherId        String?
+  publicationYear    Int?
+  pageCount          Int?
+  genre              String?
+  genreId            String?
+  subgenreId         String?
+  deweyGenreRaw      String?
+  languageCode       String?
+  synopsis           String?
+  edition            String?
+  coverUrl           String?
+  deweyCode          String?
+  deweyHierarchy     String[]           @default([])
+  deweyExplanation   String?
+  lcCode             String?
+  lcHierarchy        String[]           @default([])
+  lcExplanation      String?
+  customTags         String[]           @default([])
+  classificationUpdatedAt DateTime?
+  labelSerial        String?
+  labelSystem        String?
+  labelSize          String?
+  availabilityStatus AvailabilityStatus @default(EN_MI_BIBLIOTECA)
+  readingStatus      ReadingStatus      @default(SIN_ESTADO)
+  isReference        Boolean            @default(false)
+  shelfId            String?
+  shelfSectionId     String?
+  shelfSortOrder     Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  library            Library?           @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  publisher          Publisher?         @relation(fields: [publisherId], references: [id], onDelete: SetNull)
+  genreRef           Genre?             @relation(fields: [genreId], references: [id], onDelete: SetNull)
+  subgenre           Subgenre?          @relation(fields: [subgenreId], references: [id], onDelete: SetNull)
+  shelf              Shelf?             @relation(fields: [shelfId], references: [id], onDelete: SetNull)
+  shelfSection       ShelfSection?      @relation(fields: [shelfSectionId], references: [id], onDelete: SetNull)
+  authors            BookAuthor[]
+  loans              Loan[]
+
+  @@index([isbn13])
+  @@index([isbn10])
+  @@index([libraryId])
+  @@index([title])
+  @@index([genre])
+  @@index([genreId])
+  @@index([subgenreId])
+  @@index([publicationYear])
+  @@index([deweyCode])
+  @@index([lcCode])
+  @@index([shelfSectionId, shelfSortOrder])
+}
+
+model BookAuthor {
+  bookId      String
+  authorId    String
+  authorOrder Int    @default(1)
+  role        String @default("autor")
+  book        Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  author      Author @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@id([bookId, authorId])
+}
+
+model Loan {
+  id              String     @id @default(uuid())
+  bookId          String
+  borrowerName    String
+  borrowerContact String?
+  loanedAt        DateTime   @default(now())
+  dueAt           DateTime?
+  returnedAt      DateTime?
+  notes           String?
+  status          LoanStatus @default(ACTIVO)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  book            Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}

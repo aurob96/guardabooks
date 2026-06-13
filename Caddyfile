@@ -1,0 +1,8 @@
+{$APP_DOMAIN} {
+  encode zstd gzip
+
+  @api path /api/*
+  reverse_proxy @api api:4000
+
+  reverse_proxy web:80
+}

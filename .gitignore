@@ -1,0 +1,13 @@
+.env
+.env.local
+.env.production
+node_modules/
+.npm-cache/
+dist/
+build/
+.DS_Store
+backups/
+*.swp
+storage/covers/*
+!storage/covers/.gitkeep
+apps/api/generated/

@@ -1,0 +1,23 @@
+{
+  "name": "Biblioteca personal",
+  "short_name": "Biblioteca",
+  "description": "Catalogo personal de libros fisicos",
+  "theme_color": "#16302b",
+  "background_color": "#f7f5ef",
+  "display": "standalone",
+  "start_url": "/",
+  "icons": [
+    {
+      "src": "/favicon-guarda.webp",
+      "sizes": "1579x1974",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-icon.webp",
+      "sizes": "1579x1974",
+      "type": "image/webp",
+      "purpose": "any maskable"
+    }
+  ]
+}

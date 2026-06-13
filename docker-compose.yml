@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-biblioteca}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-biblioteca}
+      POSTGRES_DB: ${POSTGRES_DB:-biblioteca}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-biblioteca} -d ${POSTGRES_DB:-biblioteca}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://biblioteca:biblioteca@db:5432/biblioteca}
+      JWT_SECRET: ${JWT_SECRET:-cambia-esta-clave-local}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
+      API_PORT: 4000
+      UPLOAD_DIR: /app/storage/covers
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./storage/covers:/app/storage/covers
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
