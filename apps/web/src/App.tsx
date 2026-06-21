@@ -52,11 +52,35 @@ import type {
 } from "./types";
 
 const guardaLogo = "/guarda-logo.svg";
+const uiStorageKey = "biblioteca.ui.preferences";
+const bookDraftStorageKey = "biblioteca.book.draft";
+
+type ActiveView = "catalog" | "book-flow" | "management" | "map" | "assistant";
+type CatalogFocus = "all" | "missingLocation" | "missingGenre" | "missingLabel";
+type CatalogView = "grid" | "list";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
+
+function readJsonStorage<T>(key: string, fallback: T): T {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value ? { ...fallback, ...JSON.parse(value) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readBookDraft() {
+  try {
+    const value = window.localStorage.getItem(bookDraftStorageKey);
+    return value ? ({ ...freshBookForm(), ...JSON.parse(value) } as BookPayload) : freshBookForm();
+  } catch {
+    return freshBookForm();
+  }
+}
 
 const initialBookForm: BookPayload = {
   title: "",
@@ -136,20 +160,34 @@ function authorsLine(book: Book) {
 }
 
 export function App() {
+  const storedUi = readJsonStorage(uiStorageKey, {
+    activeView: "catalog" as ActiveView,
+    bookEntryMethod: "" as "scan" | "isbn" | "search" | "manual" | "",
+    bookFlowStep: 1,
+    catalogFocus: "all" as CatalogFocus,
+    genreFilter: "",
+    query: "",
+    selectedMapShelfId: "",
+    shelfFilter: "",
+    sortOrder: "updated",
+    subgenreFilter: "",
+    view: "grid" as CatalogView
+  });
   const [books, setBooks] = useState<Book[]>([]);
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState("");
-  const [genreFilter, setGenreFilter] = useState("");
-  const [subgenreFilter, setSubgenreFilter] = useState("");
-  const [shelfFilter, setShelfFilter] = useState("");
-  const [sortOrder, setSortOrder] = useState("updated");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [query, setQuery] = useState(storedUi.query);
+  const [genreFilter, setGenreFilter] = useState(storedUi.genreFilter);
+  const [subgenreFilter, setSubgenreFilter] = useState(storedUi.subgenreFilter);
+  const [shelfFilter, setShelfFilter] = useState(storedUi.shelfFilter);
+  const [sortOrder, setSortOrder] = useState(storedUi.sortOrder);
+  const [view, setView] = useState<CatalogView>(storedUi.view);
+  const [catalogFocus, setCatalogFocus] = useState<CatalogFocus>(storedUi.catalogFocus);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [drawerMode, setDrawerMode] = useState<"menu" | "book" | "classification" | "labels" | "loan">("menu");
-  const [activeView, setActiveView] = useState<"catalog" | "book-flow" | "management" | "map" | "assistant">("catalog");
+  const [activeView, setActiveView] = useState<ActiveView>(storedUi.activeView);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isSessionLoading, setIsSessionLoading] = useState(Boolean(getAuthToken()));
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
@@ -157,14 +195,14 @@ export function App() {
   const [members, setMembers] = useState<LibraryMember[]>([]);
   const [libraries, setLibraries] = useState<LibraryAccess[]>([]);
   const [memberForm, setMemberForm] = useState<{ email: string; role: LibraryRole }>({ email: "", role: "READER" });
-  const [bookFlowStep, setBookFlowStep] = useState(1);
-  const [bookEntryMethod, setBookEntryMethod] = useState<"scan" | "isbn" | "search" | "manual" | "">("");
+  const [bookFlowStep, setBookFlowStep] = useState(storedUi.bookFlowStep);
+  const [bookEntryMethod, setBookEntryMethod] = useState<"scan" | "isbn" | "search" | "manual" | "">(storedUi.bookEntryMethod);
   const [openBookMenuId, setOpenBookMenuId] = useState("");
   const [openToolSections, setOpenToolSections] = useState(["scan", "book"]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [bookForm, setBookForm] = useState<BookPayload>(() => freshBookForm());
+  const [bookForm, setBookForm] = useState<BookPayload>(() => readBookDraft());
   const [deweyGenreSuggestion, setDeweyGenreSuggestion] = useState<DeweyGenreSuggestion | null>(null);
   const [pendingBookPayload, setPendingBookPayload] = useState<BookPayload | null>(null);
   const [duplicateMatches, setDuplicateMatches] = useState<DuplicateMatch[]>([]);
@@ -205,7 +243,7 @@ export function App() {
   const [labelColumns, setLabelColumns] = useState(4);
   const [includeShelfOnLabel, setIncludeShelfOnLabel] = useState(true);
   const [labelSerialDraft, setLabelSerialDraft] = useState("");
-  const [selectedMapShelfId, setSelectedMapShelfId] = useState("");
+  const [selectedMapShelfId, setSelectedMapShelfId] = useState(storedUi.selectedMapShelfId);
   const [selectedShelfBook, setSelectedShelfBook] = useState<Book | null>(null);
   const [highlightedShelfId, setHighlightedShelfId] = useState("");
   const [highlightedBookId, setHighlightedBookId] = useState("");
@@ -249,6 +287,20 @@ export function App() {
     () => books.filter((book) => selectedBookIds.includes(book.id)),
     [books, selectedBookIds]
   );
+  const catalogStats = useMemo(
+    () => ({
+      missingGenre: books.filter((book) => !book.genreRef && !book.genre).length,
+      missingLabel: books.filter((book) => !book.labelSerial && !book.deweyCode && !book.lcCode).length,
+      missingLocation: books.filter((book) => !book.shelf).length
+    }),
+    [books]
+  );
+  const visibleCatalogBooks = useMemo(() => {
+    if (catalogFocus === "missingLocation") return books.filter((book) => !book.shelf);
+    if (catalogFocus === "missingGenre") return books.filter((book) => !book.genreRef && !book.genre);
+    if (catalogFocus === "missingLabel") return books.filter((book) => !book.labelSerial && !book.deweyCode && !book.lcCode);
+    return books;
+  }, [books, catalogFocus]);
   const selectedMapShelf = useMemo(
     () => shelves.find((shelf) => shelf.id === selectedMapShelfId) ?? null,
     [selectedMapShelfId, shelves]
@@ -313,6 +365,33 @@ export function App() {
     const id = window.setTimeout(loadData, 250);
     return () => window.clearTimeout(id);
   }, [session, query, genreFilter, subgenreFilter, shelfFilter, sortOrder]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      uiStorageKey,
+      JSON.stringify({
+        activeView: activeView === "book-flow" && editingBookId ? "catalog" : activeView,
+        bookEntryMethod,
+        bookFlowStep,
+        catalogFocus,
+        genreFilter,
+        query,
+        selectedMapShelfId,
+        shelfFilter,
+        sortOrder,
+        subgenreFilter,
+        view
+      })
+    );
+  }, [activeView, bookEntryMethod, bookFlowStep, catalogFocus, editingBookId, genreFilter, query, selectedMapShelfId, shelfFilter, sortOrder, subgenreFilter, view]);
+
+  useEffect(() => {
+    if (activeView === "book-flow" && !editingBookId) {
+      window.localStorage.setItem(bookDraftStorageKey, JSON.stringify(bookForm));
+      return;
+    }
+    if (!editingBookId) window.localStorage.removeItem(bookDraftStorageKey);
+  }, [activeView, bookForm, editingBookId]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -830,6 +909,7 @@ export function App() {
     setIsbnLookup("");
     setIsbnLookupNotice(null);
     setScanStatus("");
+    window.localStorage.removeItem(bookDraftStorageKey);
   }
 
   async function startScanner() {
@@ -986,12 +1066,13 @@ export function App() {
     resetBookEntryState();
     setBookEntryMethod("");
     setBookFlowStep(1);
-    setActiveView("catalog");
-    setIsToolsOpen(true);
-    setDrawerMode("book");
+    setActiveView("book-flow");
+    setIsToolsOpen(false);
+    setDrawerMode("menu");
     setOpenToolSections(["scan", "book"]);
     setMessage("");
     setError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cancelBookFlow() {
@@ -1588,9 +1669,9 @@ export function App() {
     setIsbnLookup("");
     setIsbnLookupNotice(null);
     setMessage(`Editando "${book.title}"`);
-    setActiveView("catalog");
-    setIsToolsOpen(true);
-    setDrawerMode("book");
+    setActiveView("book-flow");
+    setIsToolsOpen(false);
+    setDrawerMode("menu");
     setOpenToolSections(["scan", "book"]);
     setBookFlowStep(2);
     setBookEntryMethod("manual");
@@ -1782,6 +1863,7 @@ export function App() {
     setActiveView("catalog");
     setIsToolsOpen(false);
     setDrawerMode("menu");
+    setSelectedShelfBook(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -2054,7 +2136,25 @@ export function App() {
               </div>
             )}
 
-            {!editingBookId && (
+            <nav className="flow-steps" aria-label="Pasos para guardar libro">
+              <button type="button" className={bookFlowStep === 1 ? "active" : ""} onClick={() => setBookFlowStep(1)} disabled={Boolean(editingBookId)}>
+                <Barcode size={16} /> Ingreso
+              </button>
+              <button type="button" className={bookFlowStep === 2 ? "active" : ""} onClick={() => setBookFlowStep(2)}>
+                <BookOpen size={16} /> Datos
+              </button>
+              <button type="button" className={bookFlowStep === 3 ? "active" : ""} onClick={() => setBookFlowStep(3)}>
+                <Sparkles size={16} /> Clasificar
+              </button>
+              <button type="button" className={bookFlowStep === 4 ? "active" : ""} onClick={() => setBookFlowStep(4)}>
+                <Library size={16} /> Ubicar
+              </button>
+              <button type="button" className={bookFlowStep === 5 ? "active" : ""} onClick={() => setBookFlowStep(5)}>
+                <Printer size={16} /> Tejuelo
+              </button>
+            </nav>
+
+            {!editingBookId && bookFlowStep === 1 && (
               <section className="flow-card">
                 <h2>Metodo de ingreso</h2>
                 <div className="method-grid">
@@ -2153,10 +2253,15 @@ export function App() {
                     )}
                   </div>
                 )}
+                {bookEntryMethod && (
+                  <button type="button" className="primary flow-next" onClick={() => setBookFlowStep(2)}>
+                    Continuar con datos
+                  </button>
+                )}
               </section>
             )}
 
-            {true && (
+            {bookFlowStep === 2 && (
               <section className="flow-card">
                 <h2>Edicion de datos</h2>
                 <div className="stack-form">
@@ -2195,11 +2300,12 @@ export function App() {
                   <input placeholder="URL de portada" value={bookForm.coverUrl} onChange={(e) => setBookForm({ ...bookForm, coverUrl: e.target.value })} />
                   <textarea placeholder="Sinopsis" value={bookForm.synopsis} onChange={(e) => setBookForm({ ...bookForm, synopsis: e.target.value })} />
                   <button className="ghost" type="button" onClick={suggestClassification}><Sparkles size={17} /> Sugerir clasificacion</button>
+                  <button type="button" className="primary flow-next" onClick={() => setBookFlowStep(3)}>Continuar a clasificacion</button>
                 </div>
               </section>
             )}
 
-            {true && (
+            {bookFlowStep === 3 && (
               <section className="flow-card">
                 <h2>Clasificacion por IA</h2>
                 <div className="stack-form">
@@ -2229,11 +2335,12 @@ export function App() {
                   <textarea placeholder="Explicacion LC" value={classificationDraft.lcExplanation ?? ""} onChange={(event) => setClassificationDraft({ ...classificationDraft, lcExplanation: event.target.value })} />
                   <label className="tag-input"><Tags size={16} /><input placeholder="Etiquetas separadas por coma" value={classificationDraft.customTags.join(", ")} onChange={(event) => setClassificationDraft({ ...classificationDraft, customTags: splitTags(event.target.value) })} /></label>
                   <button type="button" className="primary" onClick={() => applyClassificationToForm(classificationDraft)}><Check size={17} /> Aplicar clasificacion</button>
+                  <button type="button" className="ghost flow-next" onClick={() => setBookFlowStep(4)}>Continuar a ubicacion</button>
                 </div>
               </section>
             )}
 
-            {true && (
+            {bookFlowStep === 4 && (
               <section className="flow-card">
                 <h2>Ubicacion en estanteria</h2>
                 <div className="stack-form">
@@ -2248,11 +2355,12 @@ export function App() {
                   {selectedShelfGenreMismatch && <div className="notice warning">Esta estanteria esta marcada para {selectedShelf?.genres.map((genre) => genre.name).join(", ")}, pero el libro esta marcado como {selectedBookGenre?.name}. Puedes guardarlo igual.</div>}
                   {selectedSectionGenreMismatch && selectedShelfSection && <div className="notice warning">Esta repisa esta marcada para {sectionGenresLine(selectedShelfSection)}, pero el libro esta marcado como {selectedBookGenre?.name}. Puedes guardarlo igual.</div>}
                   <button type="button" className="ghost" onClick={() => setLabelSerialDraft(bookForm.labelSerial || generateLabelSerialFromForm())}><Printer size={17} /> Actualizar tejuelo</button>
+                  <button type="button" className="primary flow-next" onClick={() => setBookFlowStep(5)}>Continuar a tejuelo</button>
                 </div>
               </section>
             )}
 
-            {true && (
+            {bookFlowStep === 5 && (
               <section className="flow-card">
                 <h2>Generacion del tejuelo</h2>
                 <div className="stack-form">
@@ -2695,6 +2803,21 @@ export function App() {
             </div>
           </div>
 
+          <div className="catalog-focus-bar" aria-label="Pendientes del catalogo">
+            <button type="button" className={catalogFocus === "all" ? "active" : ""} onClick={() => setCatalogFocus("all")}>
+              <BookOpen size={16} /> Todos
+            </button>
+            <button type="button" className={catalogFocus === "missingLocation" ? "active" : ""} onClick={() => setCatalogFocus("missingLocation")}>
+              <Library size={16} /> Sin ubicacion <strong>{catalogStats.missingLocation}</strong>
+            </button>
+            <button type="button" className={catalogFocus === "missingGenre" ? "active" : ""} onClick={() => setCatalogFocus("missingGenre")}>
+              <Tags size={16} /> Sin genero <strong>{catalogStats.missingGenre}</strong>
+            </button>
+            <button type="button" className={catalogFocus === "missingLabel" ? "active" : ""} onClick={() => setCatalogFocus("missingLabel")}>
+              <Printer size={16} /> Sin tejuelo <strong>{catalogStats.missingLabel}</strong>
+            </button>
+          </div>
+
           {message && <div className="notice success">{message}</div>}
           {error && <div className="notice error">{error}</div>}
           {duplicateMatches.length > 0 && (
@@ -2738,12 +2861,12 @@ export function App() {
           )}
 
           <div className="catalog-heading">
-            <h2>{total} libros</h2>
+            <h2>{catalogFocus === "all" ? total : visibleCatalogBooks.length} libros</h2>
             {isLoading && <span>Cargando...</span>}
           </div>
 
           <div className={view === "grid" ? "book-grid" : "book-list"}>
-            {books.map((book) => (
+            {visibleCatalogBooks.map((book) => (
               <article className="book-card" key={book.id}>
                 <div className="cover">
                   <label className="select-book">
@@ -2791,7 +2914,7 @@ export function App() {
                         <Undo2 size={16} /> Devolver
                       </button>
                     ) : (
-                      <button onClick={() => { setLoanForm((current) => ({ ...current, bookId: book.id })); setIsToolsOpen(true); }}>
+                      <button onClick={() => openLoanPanel(book)}>
                         <Send size={16} /> Prestar
                       </button>
                     )}
@@ -2810,7 +2933,7 @@ export function App() {
             ))}
           </div>
 
-          {!isLoading && books.length === 0 && (
+          {!isLoading && visibleCatalogBooks.length === 0 && (
             <div className="empty-state">
               <BookOpen size={36} />
               <p>No hay libros con esos criterios.</p>
